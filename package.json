@@ -1,0 +1,14 @@
+{
+  "name": "ccs-ast-client",
+  "version": "1.0.0",
+  "description": "Nodejs ami & rabbitmq client of ccs asterisk",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "erofeev",
+  "license": "ISC",
+  "dependencies": {
+    "asterisk-ami-client": "^1.1.5"
+  }
+}
