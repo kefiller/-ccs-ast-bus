@@ -1,6 +1,6 @@
 #!/usr/bin/env docker-node
 
-const {isNil, some} = require('lodash');
+const {isNil, some, get} = require('lodash');
 const AmiClient = require('asterisk-ami-client');
 
 const client = new AmiClient({
@@ -15,6 +15,9 @@ const client = new AmiClient({
 const ami_host = process.env.AMI_HOST;
 const ami_user = process.env.AMI_USER;
 const ami_password = process.env.AMI_PASSWORD;
+
+const rabbit_srv = get(process.env, 'RABBIT_SRV', '127.0.0.1');
+const pbx_events_exchange = get(process.env, 'PBX_EVENTS_EXCHANGE', 'ccs_events');
 
 if (some([ami_host, ami_user, ami_password], isNil) ) {
     console.log('Some of AMI_* env variables not set');
