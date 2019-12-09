@@ -9,6 +9,8 @@
   "author": "erofeev",
   "license": "ISC",
   "dependencies": {
-    "asterisk-ami-client": "^1.1.5"
+    "amqplib": "^0.5.5",
+    "asterisk-ami-client": "^1.1.5",
+    "lodash": "^4.17.15"
   }
 }

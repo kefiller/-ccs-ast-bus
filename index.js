@@ -1,6 +1,8 @@
 #!/usr/bin/env docker-node
 
+const {isNil, some} = require('lodash');
 const AmiClient = require('asterisk-ami-client');
+
 const client = new AmiClient({
     reconnect: true,
     keepAlive: true,
@@ -14,19 +16,22 @@ const ami_host = process.env.AMI_HOST;
 const ami_user = process.env.AMI_USER;
 const ami_password = process.env.AMI_PASSWORD;
 
+if (some([ami_host, ami_user, ami_password], isNil) ) {
+    console.log('Some of AMI_* env variables not set');
+    process.exit(1);
+}
+
 client
-        .on('connect', () => console.log('connect'))
+        .on('connect', () => console.log(`connected to ${ami_host}`))
         .on('event', event => console.log('event', event))
-        .on('data', chunk => console.log('chunk', chunk))
         .on('response', response => console.log('response', response))
-        .on('disconnect', () => console.log('disconnect'))
-        .on('reconnection', () => console.log('reconnection'))
+        .on('disconnect', () => console.log(`disconnected from ${ami_host}`))
+        .on('reconnection', () => console.log(`reconnection to ${ami_host}`))
         .on('internalError', error => console.log('internalError', error));
 
 (async () => {
     try {
-        let result = await client.connect(ami_user, ami_password, {host: ami_host, port: 5038});
-        console.log(result);
+        // await client.connect(ami_user, ami_password, {host: ami_host, port: 5038});
 
         setTimeout(() => {
             client.disconnect();
