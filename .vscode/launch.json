@@ -16,6 +16,7 @@
                 "AMI_HOST" : "dcccsast.guo.local",
                 "AMI_USER" : "api",
                 "AMI_PASSWORD" : "Fgbitxrf18",
+                "RABBIT_SRV" : "62.109.17.171",
             }
         },
     ]
