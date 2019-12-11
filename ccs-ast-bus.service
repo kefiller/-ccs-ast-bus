@@ -1,0 +1,13 @@
+[Unit]
+Description=ccs-ast-bus container
+After=docker.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+Restart=always
+ExecStartPre=-/srv/ccs-ast-bus/ccs-ast-bus_stop.sh
+ExecStart=/srv/ccs-ast-bus/ccs-ast-bus_start.sh
+
+[Install]
+WantedBy=multi-user.target

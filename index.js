@@ -12,6 +12,18 @@ function bail(msg) {
     process.exit(1);
 }
 
+process.on('SIGINT', () => {
+    console.log('Received SIGINT, exit');
+    amiClient.disconnect();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('Received SIGTERM, exit');
+    amiClient.disconnect();
+    process.exit(0);
+});
+
 const amiClient = new AmiClient({
     reconnect: true,
     keepAlive: true,
@@ -56,7 +68,7 @@ amiClient
         process.stdout.write(`Connecting to rabbitmq server ${rabbit_srv}...`);
         const conn = await amqp.connect(`amqp://${rabbit_srv}`);
         console.log('Success');
-        
+
         process.stdout.write(`Creating rabbitmq communication channel...`);
         const channel = await conn.createChannel();
         console.log('Success');
@@ -71,10 +83,10 @@ amiClient
         channel.assertExchange(pbx_cmd_exchange, 'topic', {
             durable: false
         });
-     
+
         // Emit asterisk events to message bus callback (bind before any events arrived)
         amiClient.on('event', event => {
-            console.log(event);
+            //console.log(event);
             channel.publish(pbx_events_exchange, exchange_key, Buffer.from(JSON.stringify(event)));
         });
 
@@ -96,10 +108,6 @@ amiClient
         }, {
             noAck: true
         });
-
-        // setTimeout(() => {
-        //     amiClient.disconnect();
-        // }, 50000);
 
     } catch(error) {
         bail(error.message);
