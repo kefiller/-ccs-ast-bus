@@ -87,6 +87,7 @@ amiClient
         // Emit asterisk events to message bus callback (bind before any events arrived)
         amiClient.on('event', event => {
             //console.log(event);
+            event['pbx.server'] = hostname;
             channel.publish(pbx_events_exchange, exchange_key, Buffer.from(JSON.stringify(event)));
         });
 
