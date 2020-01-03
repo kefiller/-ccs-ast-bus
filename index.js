@@ -1,9 +1,10 @@
 #!/usr/bin/env docker-node
 
 const os = require('os');
-const {isNil, some, get} = require('lodash');
+const { isNil, some, get, map, flow, concat } = require('lodash');
 const AmiClient = require('asterisk-ami-client');
 const amqp = require('amqplib');
+const uuidv1 = require('uuid/v1');
 
 const hostname = os.hostname();
 
@@ -51,17 +52,111 @@ const pbx_cmd_exchange = get(process.env, 'PBX_CMD_EXCHANGE', 'ccs_pbx_cmd');
 const pbx_cmd_routing_key_prefix = get(process.env, 'PBX_CMD_ROUTING_KEY_PREFIX', 'ccs.pbx.cmd');
 const pbx_cmd_routing_key = `${pbx_cmd_routing_key_prefix}.${hostname}`;
 
-if (some([ami_host, ami_user, ami_password], isNil) ) {
+if (some([ami_host, ami_user, ami_password], isNil)) {
     console.log('Some of required AMI_* env variables not set');
     process.exit(1);
 }
 
 amiClient
-        .on('connect', () => console.log(`connected to ${ami_host} successfully`))
-        .on('response', response => console.log('response', response))
-        .on('disconnect', () => console.log(`disconnected from ${ami_host}`))
-        .on('reconnection', () => console.log(`reconnection to ${ami_host}`))
-        .on('internalError', error => bail('internalError:' + error));
+    .on('connect', () => console.log(`connected to ${ami_host} successfully`))
+    .on('response', response => console.log('response', response))
+    .on('disconnect', () => console.log(`disconnected from ${ami_host}`))
+    .on('reconnection', () => console.log(`reconnection to ${ami_host}`))
+    .on('internalError', error => bail('internalError:' + error));
+
+const withActionId = (ActionID) => (action) => {
+    return {
+        ...action,
+        ActionID
+    }
+}
+
+const withStdReponse = (amiClient, ActionID, fn) => {
+    amiClient.on(`resp_${ActionID}`, response => {
+        fn(response);
+        amiClient.removeAllListeners(`resp_${ActionID}`);
+    });
+};
+
+const amiOriginateAction = (amiClient, fn = null) => {
+    const toArr = (obj) => {
+        return map(obj, (val, key) =>{
+            return `${key}: ${val}`;
+        });
+    }
+
+    const addVars = (obj) => (cmdArr) => {
+        const varsArr =  map(obj, (val, key) =>{
+            return `Variable: ${key}=${val}`;
+        });
+        return concat(cmdArr, varsArr);
+    }
+
+    const join = (str) => (arr) => {
+        return arr.join(str);
+    }
+    
+    const uuid = uuidv1();
+    const action = {
+        Action: 'Originate',
+        channel: 'SIP/atk-lv/89201911686^79190690417^12414',
+        callerid: '79190690417',
+        timeout: '40000',
+        context: 'api-originate',
+        exten: '9998',
+        priority: '1',
+        async: 'true'
+    };
+
+    const origVars = {
+        'BRIDGE-TARGET' : 'dialplan',
+        'BRT-CTX' : 'internal',
+        'BRT-EXTEN' : '9998',
+        'API-CALL-ID' : `${uuid}`,
+    };
+
+    const f = flow([
+        withActionId(uuid),
+        toArr,
+        addVars(origVars),
+        join("\r\n")
+    ]);
+
+    console.log(f(action));
+    
+    if(fn) {
+        withStdReponse(amiClient, uuid, fn);
+    }
+
+    amiClient.connection.write(f(action));
+};
+
+const amiOriginateResponse = (response) => {
+    console.log('amiOriginateResponse', response);
+};
+
+const amiPauseAction = () => {
+    return {
+        Action: 'Pause',
+    }
+}
+
+const amiPingAction = (amiClient, fn = null) => {
+    const uuid = uuidv1();
+    const action = {
+        Action: 'Ping',
+    };
+    
+    if(fn) {
+        withStdReponse(amiClient, uuid, fn);
+    }
+
+    amiClient.action(withActionId(uuid)(action));
+}
+
+const amiPingResponse = (response) => {
+    console.log('amiPingResponse', response);
+}
 
 (async () => {
     try {
@@ -86,13 +181,16 @@ amiClient
 
         // Emit asterisk events to message bus callback (bind before any events arrived)
         amiClient.on('event', event => {
-            //console.log(event);
+            console.log(event);
             event['pbx.server'] = hostname;
             channel.publish(pbx_events_exchange, exchange_key, Buffer.from(JSON.stringify(event)));
         });
 
         console.log(`Connecting to AMI server ${ami_host}...`);
-        await amiClient.connect(ami_user, ami_password, {host: ami_host, port: 5038});
+        await amiClient.connect(ami_user, ami_password, { host: ami_host, port: 5038 });
+
+        // amiPingAction(amiClient, amiPingResponse);
+        amiOriginateAction(amiClient, amiPingResponse);
 
         // Listen for commands
 
@@ -103,14 +201,15 @@ amiClient
         // connect queue to cmd exchange. Receive commands only for current hostname
         console.log(`Binding temporary queue ${queue} to command exchange ${pbx_cmd_exchange} with routing key ${pbx_cmd_routing_key}`);
         channel.bindQueue(queue, pbx_cmd_exchange, pbx_cmd_routing_key);
-        channel.consume(queue, ({ fields : {routingKey}, content = null }) => {
+        channel.consume(queue, ({ fields: { routingKey }, content = null }) => {
             if (!content) return;
             console.log(" [x] Received %s: '%s'", routingKey, content.toString());
         }, {
             noAck: true
         });
 
-    } catch(error) {
+    } catch (error) {
         bail(error.message);
     }
 })();
+
