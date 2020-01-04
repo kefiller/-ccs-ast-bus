@@ -59,10 +59,11 @@ if (some([ami_host, ami_user, ami_password], isNil)) {
 
 amiClient
     .on('connect', () => console.log(`connected to ${ami_host} successfully`))
-    .on('response', response => console.log('response', response))
     .on('disconnect', () => console.log(`disconnected from ${ami_host}`))
     .on('reconnection', () => console.log(`reconnection to ${ami_host}`))
     .on('internalError', error => bail('internalError:' + error));
+
+// .on('response', response => console.log('response', response))
 
 const withActionId = (ActionID) => (action) => {
     return {
@@ -78,15 +79,15 @@ const withStdReponse = (amiClient, ActionID, fn) => {
     });
 };
 
-const amiOriginateAction = (amiClient, fn = null) => {
+const amiOriginateAction = (amiClient, action, origVars, responseFn = null, eventFn = null) => {
     const toArr = (obj) => {
-        return map(obj, (val, key) =>{
+        return map(obj, (val, key) => {
             return `${key}: ${val}`;
         });
     }
 
     const addVars = (obj) => (cmdArr) => {
-        const varsArr =  map(obj, (val, key) =>{
+        const varsArr = map(obj, (val, key) => {
             return `Variable: ${key}=${val}`;
         });
         return concat(cmdArr, varsArr);
@@ -95,25 +96,10 @@ const amiOriginateAction = (amiClient, fn = null) => {
     const join = (str) => (arr) => {
         return arr.join(str);
     }
-    
-    const uuid = uuidv1();
-    const action = {
-        Action: 'Originate',
-        channel: 'SIP/atk-lv/89201911686^79190690417^12414',
-        callerid: '79190690417',
-        timeout: '40000',
-        context: 'api-originate',
-        exten: '9998',
-        priority: '1',
-        async: 'true'
-    };
 
-    const origVars = {
-        'BRIDGE-TARGET' : 'dialplan',
-        'BRT-CTX' : 'internal',
-        'BRT-EXTEN' : '9998',
-        'API-CALL-ID' : `${uuid}`,
-    };
+    const uuid = uuidv1();
+
+    origVars['API-CALL-ID'] = uuid;
 
     const f = flow([
         withActionId(uuid),
@@ -122,40 +108,72 @@ const amiOriginateAction = (amiClient, fn = null) => {
         join("\r\n")
     ]);
 
-    console.log(f(action));
-    
-    if(fn) {
-        withStdReponse(amiClient, uuid, fn);
+    if (responseFn) {
+        withStdReponse(amiClient, uuid, responseFn);
+    }
+
+    if (eventFn) {
+        const evtListener = evt => {
+            if (evt.ActionID === uuid) {
+                eventFn(evt);
+                amiClient.removeListener('event', evtListener);
+            }
+        }
+        amiClient.on('event', evtListener);
     }
 
     amiClient.connection.write(f(action));
 };
 
-const amiOriginateResponse = (response) => {
-    console.log('amiOriginateResponse', response);
-};
-
-const amiPauseAction = () => {
-    return {
-        Action: 'Pause',
-    }
-}
-
-const amiPingAction = (amiClient, fn = null) => {
+const amiAction = (amiClient, action, responseFn = null, eventFn = null) => {
     const uuid = uuidv1();
-    const action = {
-        Action: 'Ping',
-    };
-    
-    if(fn) {
-        withStdReponse(amiClient, uuid, fn);
+    if (responseFn) {
+        withStdReponse(amiClient, uuid, responseFn);
+    }
+    if (eventFn) {
+        const evtListener = evt => {
+            if (evt.ActionID === uuid) {
+                eventFn(evt);
+                amiClient.removeListener('event', evtListener);
+            }
+        }
+        amiClient.on('event', evtListener);
     }
 
     amiClient.action(withActionId(uuid)(action));
 }
 
-const amiPingResponse = (response) => {
-    console.log('amiPingResponse', response);
+const dispatchCommand = (amiClient, cmd) => {
+        // amiPingAction(amiClient, amiPingResponse);
+        // const action = {
+        //     Action: 'Originate',
+        //     channel: 'SIP/atk-lv/89201911686^79190690417^12414',
+        //     callerid: '79190690417',
+        //     timeout: '40000',
+        //     context: 'api-originate',
+        //     exten: '9998',
+        //     priority: '1',
+        //     async: 'true'
+        // };
+
+        // const origVars = {
+        //     'BRIDGE-TARGET' : 'dialplan',
+        //     'BRT-CTX' : 'internal',
+        //     'BRT-EXTEN' : '9998',
+        // };
+        // amiOriginateAction(amiClient, action, origVars, amiOriginateResponse, amiOriginateEventListener);
+
+        // const action = {
+        //     Action: 'Ping',
+        // };
+        const action = {
+            Action: 'QueuePause',
+            Interface: `sip/2857`,
+            Paused: 'true'
+        }
+
+        amiAction(amiClient, action, resp => console.log('Response', resp), eventFn = evt => console.log('Evt', evt));
+
 }
 
 (async () => {
@@ -181,16 +199,13 @@ const amiPingResponse = (response) => {
 
         // Emit asterisk events to message bus callback (bind before any events arrived)
         amiClient.on('event', event => {
-            console.log(event);
+            // console.log(event);
             event['pbx.server'] = hostname;
             channel.publish(pbx_events_exchange, exchange_key, Buffer.from(JSON.stringify(event)));
         });
 
         console.log(`Connecting to AMI server ${ami_host}...`);
         await amiClient.connect(ami_user, ami_password, { host: ami_host, port: 5038 });
-
-        // amiPingAction(amiClient, amiPingResponse);
-        amiOriginateAction(amiClient, amiPingResponse);
 
         // Listen for commands
 
@@ -202,8 +217,17 @@ const amiPingResponse = (response) => {
         console.log(`Binding temporary queue ${queue} to command exchange ${pbx_cmd_exchange} with routing key ${pbx_cmd_routing_key}`);
         channel.bindQueue(queue, pbx_cmd_exchange, pbx_cmd_routing_key);
         channel.consume(queue, ({ fields: { routingKey }, content = null }) => {
-            if (!content) return;
-            console.log(" [x] Received %s: '%s'", routingKey, content.toString());
+            if (!content) {
+                console.log("Received empty packet. RoutingKey:'%s'", routingKey);
+                return;
+            }
+            const payload = JSON.parse(content.toString());
+            if (!payload) {
+                console.log("Received unparseable packet. RoutingKey:'%s', packet:'%s'", routingKey, content.toString());
+                return;
+            }
+            console.log(" [x] Received good packet. RoutingKey:'%s'", routingKey, payload);
+            dispatchCommand(amiClient, payload);
         }, {
             noAck: true
         });
