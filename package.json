@@ -11,6 +11,7 @@
   "dependencies": {
     "amqplib": "^0.5.5",
     "asterisk-ami-client": "^1.1.5",
-    "lodash": "^4.17.15"
+    "lodash": "^4.17.15",
+    "uuid": "^3.3.3"
   }
 }
