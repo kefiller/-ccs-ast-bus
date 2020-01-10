@@ -38,6 +38,7 @@ const ami_user = process.env.AMI_USER;
 const ami_password = process.env.AMI_PASSWORD;
 
 const rabbit_srv = get(process.env, 'RABBIT_SRV', '127.0.0.1');
+const pbx_name = get(process.env, 'PBX_NAME', hostname);
 
 // PBX events topic name
 const pbx_events_exchange = get(process.env, 'PBX_EVENTS_EXCHANGE', 'ccs_pbx_events');
@@ -87,7 +88,7 @@ amiClient
         // Emit asterisk events to message bus callback (bind before any events arrived)
         amiClient.on('event', event => {
             //console.log(event);
-            event['pbx.server'] = hostname;
+            event['srv'] = pbx_name;
             channel.publish(pbx_events_exchange, exchange_key, Buffer.from(JSON.stringify(event)));
         });
 
