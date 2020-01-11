@@ -53,7 +53,8 @@ const exchange_key = `${pbx_events_key_prefix}.${hostname}`;
 // PBX commands topic name
 const pbx_cmd_exchange = get(process.env, 'PBX_CMD_EXCHANGE', 'ccs_pbx_cmd');
 const pbx_cmd_routing_key_prefix = get(process.env, 'PBX_CMD_ROUTING_KEY_PREFIX', 'ccs.pbx.cmd');
-const pbx_cmd_routing_key = `${pbx_cmd_routing_key_prefix}.${hostname}`;
+// const pbx_cmd_routing_key = `${pbx_cmd_routing_key_prefix}.${hostname}`;
+const pbx_cmd_routing_key = `${pbx_cmd_routing_key_prefix}.#`;
 
 if (some([ami_host, ami_user, ami_password], isNil)) {
     log('Some of required AMI_* env variables not set');
