@@ -5,25 +5,23 @@ const { isNil, some, get, map, flow, concat, noop } = require('lodash');
 const AmiClient = require('asterisk-ami-client');
 const amqp = require('amqplib');
 const uuidv1 = require('uuid/v1');
-
-const log = (...args) => console.log(...args);
-const trace = log;
+const log = require('loglevel');
 
 const hostname = os.hostname();
 
 function bail(msg) {
-    log('Fatal - ' + msg);
+    log.error('Fatal - ' + msg);
     process.exit(1);
 }
 
 process.on('SIGINT', () => {
-    log('Received SIGINT, exit');
+    log.info('Received SIGINT, exit');
     amiClient.disconnect();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    log('Received SIGTERM, exit');
+    log.info('Received SIGTERM, exit');
     amiClient.disconnect();
     process.exit(0);
 });
@@ -43,6 +41,7 @@ const ami_password = process.env.AMI_PASSWORD;
 
 const rabbit_srv = get(process.env, 'RABBIT_SRV', '127.0.0.1');
 const pbx_name = get(process.env, 'PBX_NAME', hostname);
+log.setLevel(get(process.env, 'LOG_LEVEL', 'info'));
 
 // PBX events topic name
 const pbx_events_exchange = get(process.env, 'PBX_EVENTS_EXCHANGE', 'ccs_pbx_events');
@@ -58,17 +57,17 @@ const pbx_cmd_routing_key_prefix = get(process.env, 'PBX_CMD_ROUTING_KEY_PREFIX'
 const pbx_cmd_routing_key = `${pbx_cmd_routing_key_prefix}.#`;
 
 if (some([ami_host, ami_user, ami_password], isNil)) {
-    log('Some of required AMI_* env variables not set');
+    log.info('Some of required AMI_* env variables not set');
     process.exit(1);
 }
 
 amiClient
-    .on('connect', () => log(`connected to ${ami_host} successfully`))
-    .on('disconnect', () => log(`disconnected from ${ami_host}`))
-    .on('reconnection', () => log(`reconnection to ${ami_host}`))
+    .on('connect', () => log.info(`connected to ${ami_host} successfully`))
+    .on('disconnect', () => log.info(`disconnected from ${ami_host}`))
+    .on('reconnection', () => log.info(`reconnection to ${ami_host}`))
     .on('internalError', error => bail('internalError:' + error));
 
-// .on('response', response => log('response', response))
+// .on('response', response => log.info('response', response))
 
 const withActionId = (ActionID) => (action) => {
     return {
@@ -102,12 +101,13 @@ const amiOriginateAction = (amiClient, action, origVars, responseFn = null, even
         return arr.join(str);
     }
 
-    const uuid = uuidv1();
+    // const uuid = uuidv1();
+    // origVars['API-CALL-ID'] = uuid;
 
-    origVars['API-CALL-ID'] = uuid;
+    const uuid = action.actionid;
 
     const f = flow([
-        withActionId(uuid),
+        // withActionId(uuid),
         toArr,
         addVars(origVars),
         join("\r\n")
@@ -156,7 +156,7 @@ const dispatchCommand = (amiClient, cmd = {}) => {
             const action = {
                 Action: 'Ping',
             };
-            amiAction(amiClient, action, resp => trace('ping response', resp) /*, eventFn = evt => log('Evt', evt) */);
+            amiAction(amiClient, action, resp => log.debug('ping response', resp) /*, eventFn = evt => log.info('Evt', evt) */);
         } break;
         case 'pause_queue_member': {
             const member = cmd.member;
@@ -165,7 +165,7 @@ const dispatchCommand = (amiClient, cmd = {}) => {
                 Interface: `sip/${member}`,
                 Paused: 'true'
             }
-            amiAction(amiClient, action, resp => trace('pause_queue_member response', resp) /*, eventFn = evt => log('Evt', evt) */);
+            amiAction(amiClient, action, resp => log.debug('pause_queue_member response', resp) /*, eventFn = evt => log.info('Evt', evt) */);
         } break;
         case 'unpause_queue_member': {
             const member = cmd.member;
@@ -174,64 +174,51 @@ const dispatchCommand = (amiClient, cmd = {}) => {
                 Interface: `sip/${member}`,
                 Paused: 'false'
             }
-            amiAction(amiClient, action, resp => trace('unpause_queue_member response', resp));
+            amiAction(amiClient, action, resp => log.debug('unpause_queue_member response', resp));
         } break;
         case 'originate': {
-            // const action = {
-            //     Action: 'Originate',
-            //     channel: 'SIP/atk-lv/89201911686^79190690417^12414',
-            //     callerid: '79190690417',
-            //     timeout: '40000',
-            //     context: 'api-originate',
-            //     exten: '9998',
-            //     priority: '1',
-            //     async: 'true'
-            // };
-
-            // const origVars = {
-            //     'BRIDGE-TARGET' : 'dialplan',
-            //     'BRT-CTX' : 'internal',
-            //     'BRT-EXTEN' : '9998',
-            // };
-            // amiOriginateAction(amiClient, action, origVars, amiOriginateResponse, amiOriginateEventListener);
-
+            log.debug('originate', cmd);
+            const action = cmd.keys;
+            const origVars = cmd.vars;
+            amiOriginateAction(
+                amiClient, action, origVars, /*amiOriginateResponse, amiOriginateEventListener*/
+            );
         } break;
 
         default:
-            log(`unknown action_type='${action_type}'`);
+            log.info(`unknown action_type='${action_type}'`);
             break;
     }
 }
 
 (async () => {
     try {
-        process.stdout.write(`Connecting to rabbitmq server ${rabbit_srv}...`);
+        log.info(`Connecting to rabbitmq server ${rabbit_srv}...`);
         const conn = await amqp.connect(`amqp://${rabbit_srv}`);
-        log('Success');
+        log.info(`Connected to rabbitmq server ${rabbit_srv} successfully`);
 
-        process.stdout.write(`Creating rabbitmq communication channel...`);
+        log.info(`Creating rabbitmq communication channel...`);
         const channel = await conn.createChannel();
-        log('Success');
+        log.info('Created rabbitmq communication channel successfully`');
 
         // Create exchanges if not exists
-        log(`Making sure exchange ${pbx_events_exchange} exists`);
+        log.info(`Making sure exchange ${pbx_events_exchange} exists`);
         channel.assertExchange(pbx_events_exchange, 'topic', {
             durable: false
         });
 
-        log(`Making sure exchange ${pbx_cmd_exchange} exists`);
+        log.info(`Making sure exchange ${pbx_cmd_exchange} exists`);
         channel.assertExchange(pbx_cmd_exchange, 'topic', {
             durable: false
         });
 
         // Emit asterisk events to message bus callback (bind before any events arrived)
         amiClient.on('event', event => {
-            //log(event);
             event['srv'] = pbx_name;
             channel.publish(pbx_events_exchange, exchange_key, Buffer.from(JSON.stringify(event)));
         });
 
-        log(`Connecting to AMI server ${ami_host}...`);
+        log.info(`Connecting to AMI server ${ami_host}...`);
         await amiClient.connect(ami_user, ami_password, { host: ami_host, port: 5038 });
 
         // Listen for commands
@@ -241,22 +228,28 @@ const dispatchCommand = (amiClient, cmd = {}) => {
             exclusive: true
         });
         // connect queue to cmd exchange. Receive commands only for current hostname
-        log(`Binding temporary queue ${queue} to command exchange ${pbx_cmd_exchange} with routing key ${pbx_cmd_routing_key}`);
+        log.info(`Binding temporary queue ${queue} to command exchange ${pbx_cmd_exchange} with routing key ${pbx_cmd_routing_key}`);
         channel.bindQueue(queue, pbx_cmd_exchange, pbx_cmd_routing_key);
         channel.consume(queue, ({ fields: { routingKey }, content = null }) => {
             if (!content) {
-                log("Received empty packet. RoutingKey:'%s'", routingKey);
+                log.warn("Received empty packet. RoutingKey:'%s'", routingKey);
                 return;
             }
             let payload = null;
             try {
                 payload = JSON.parse(content.toString());
             } catch (error) {
-                return log("Received unparseable packet. RoutingKey:'%s', packet:'%s'", routingKey, content.toString());
+                return log.warn("Received unparseable packet. RoutingKey:'%s', packet:'%s'", routingKey, content.toString());
             }
 
-            trace(" [x] Received good packet. RoutingKey:'%s'", routingKey, payload);
-            dispatchCommand(amiClient, payload);
+            log.debug(" [x] Received good packet. RoutingKey:'%s'", routingKey, payload);
+            // Handle if our packet. Our if:
+            // 1) is broadcast, and routingKey === pbx_cmd_routing_key_prefix (no tail)
+            // 2) tail is ours pbx_name
+            if(routingKey === pbx_cmd_routing_key_prefix || routingKey.replace(`${pbx_cmd_routing_key_prefix}.`, '') === pbx_name) {
+                log.debug('Ours packet, handle it');
+                dispatchCommand(amiClient, payload);
+            }
         }, {
             noAck: true
         });

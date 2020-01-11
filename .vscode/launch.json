@@ -13,10 +13,12 @@
             ],
             "program": "${file}",
             "env": {
+                "PBX_NAME" : "dclvccsast.guo.local",
                 "AMI_HOST" : "dclvccsast.guo.local",
                 "AMI_USER" : "api",
                 "AMI_PASSWORD" : "Fgbitxrf18",
                 "RABBIT_SRV" : "62.109.17.171",
+                "LOG_LEVEL" : "trace"
             }
         },
     ]
