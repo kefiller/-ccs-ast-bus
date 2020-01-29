@@ -13,5 +13,5 @@ docker run -t --rm  -w /app \
     -e AMI_HOST='localhost' \
     -e AMI_USER=api \
     -e AMI_PASSWORD='Fgbitxrf18' \
-    -e LOG_LEVEL="info" \
+    -e LOG_LEVEL="trace" \
     node:latest node index.js $@
