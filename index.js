@@ -215,7 +215,7 @@ const dispatchCommand = (amiClient, cmd = {}) => {
         // Emit asterisk events to message bus callback (bind before any events arrived)
         amiClient.on('event', event => {
             event['srv'] = pbx_name;
-            log.debug(" [x] Received event to publish:", event);
+            log.debug(" [x] Received event to publish:", event.Event || 'empty');
             channel.publish(pbx_events_exchange, exchange_key, Buffer.from(JSON.stringify(event)));
         });
 
@@ -248,7 +248,7 @@ const dispatchCommand = (amiClient, cmd = {}) => {
             // 1) is broadcast, and routingKey === pbx_cmd_routing_key_prefix (no tail)
             // 2) tail is ours pbx_name
             if(routingKey === pbx_cmd_routing_key_prefix || routingKey.replace(`${pbx_cmd_routing_key_prefix}.`, '') === pbx_name) {
-                log.debug('Ours packet, handle it');
+                log.debug('Handle ours packet:', payload);
                 dispatchCommand(amiClient, payload);
             }
         }, {
