@@ -201,6 +201,11 @@ const dispatchCommand = (amiClient, cmd = {}) => {
         const channel = await conn.createChannel();
         log.info('Created rabbitmq communication channel successfully`');
 
+        channel.on('close', () => log.info('channel closed'));
+        channel.on('error', (err) => log.info('channel error:', err));
+        channel.on('return', (msg) => log.info('channel return:', msg));
+        channel.on('drain', () => log.info('channel drain'));
+
         // Create exchanges if not exists
         log.info(`Making sure exchange ${pbx_events_exchange} exists`);
         channel.assertExchange(pbx_events_exchange, 'topic', {
