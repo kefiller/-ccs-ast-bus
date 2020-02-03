@@ -177,7 +177,6 @@ const dispatchCommand = (amiClient, cmd = {}) => {
             amiAction(amiClient, action, resp => log.debug('unpause_queue_member response', resp));
         } break;
         case 'originate': {
-            log.debug('originate', cmd);
             const action = cmd.keys;
             const origVars = cmd.vars;
             amiOriginateAction(
@@ -220,8 +219,9 @@ const dispatchCommand = (amiClient, cmd = {}) => {
         // Emit asterisk events to message bus callback (bind before any events arrived)
         amiClient.on('event', event => {
             event['srv'] = pbx_name;
-            log.debug(" [x] Received event to publish:", event.Event || 'empty');
-            channel.publish(pbx_events_exchange, exchange_key, Buffer.from(JSON.stringify(event)));
+            const strEvent = JSON.stringify(event);
+            log.debug(" [x] Received event to publish: '%s'", strEvent);
+            channel.publish(pbx_events_exchange, exchange_key, Buffer.from(strEvent));
         });
 
         log.info(`Connecting to AMI server ${ami_host}...`);
